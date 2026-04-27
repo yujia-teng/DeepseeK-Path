@@ -14,17 +14,24 @@ AlterSeeK-Path generates altermagnetic k-point paths for band-structure calculat
 git clone https://github.com/yujia-teng/AlterSeeK-Path.git
 cd AlterSeeK-Path
 pip install -r requirements.txt
+pip install -e .
 ```
+
+After editable installation, the installed commands are available from any
+calculation directory in the same Python environment. You do not need to copy the
+Python scripts into each material folder.
 
 ---
 
 ## Quick Start
 
-Run the main script:
+Run the command-line tool from any working folder containing your structure file:
 
 ```bash
-python alterseek_path.py
+alterseek-path
 ```
+
+For development, `python alterseek_path.py` still works from the repository root.
 
 The script guides you through five interactive steps:
 
@@ -42,6 +49,10 @@ The default output file is:
 ```text
 KPOINTS_modified
 ```
+
+For cluster screening, install AlterSeeK-Path once in the environment used by
+your jobs, then run `alterseek-path` inside each material calculation directory.
+The command reads and writes files in the current directory.
 
 ---
 
@@ -79,13 +90,13 @@ Laue Group: 6/mmm
 Magnetic SG: BNS ..., type ...
 Spin group: COLLINEAR(axis=[0. 0. 1.])
 Operations: 12 total, 6 spin-flip, 6 spin-preserving
-Saved: spin_operations.txt, flip_spin_operations.txt, preserve_spin_operations.txt
+Saved: spin_operations.txt, spin_flip_operations.txt, spin_preserve_operations.txt
 
 >>> Step 1: High-symmetry k-path
-IBZ type: HEX
+IBZ type: hP2
 Path: GAMMA-M-K-GAMMA-A-L-H-A | L-M | H-K
 Press [Enter] to use this path, or type a filename to load your own:
-Using S-C HEX path (9 segments, 18 k-points)
+Using HPKOT hP2 path (9 segments, 18 k-points)
 
 >>> Step 2: General k-point
 IBZ centroid: [0.277778, 0.111111, 0.250000]
@@ -116,14 +127,66 @@ Done.
 |------|-------------|
 | `KPOINTS_modified` | Altermagnetic k-path for VASP line-mode band calculations |
 | `spin_operations.txt` | Full spin-symmetry operation log |
-| `flip_spin_operations.txt` | Spin-flip rotation matrices used by the main workflow |
-| `preserve_spin_operations.txt` | Spin-preserving rotation matrices used for completion/diagnostics |
+| `spin_flip_operations.txt` | Spin-flip rotation matrices used by the main workflow |
+| `spin_preserve_operations.txt` | Spin-preserving rotation matrices used for completion/diagnostics |
 | `*_ibz_*.png` | IBZ/BZ figure with the selected general k point |
 | `*_spinflip_*.png` | Spin-up/spin-down IBZ connection figure |
 | `*_spinbz_*.png` | Spin-colored BZ figure |
 | `*_spinbz_top_*.png` | Top-view spin-colored BZ figure |
 
 For Laue groups `-1`, `-3`, and `m-3`, no altermagnetic splitting is supported. The code prints a note and writes the ordinary IBZ path.
+
+---
+
+## Band Plotting
+
+After VASP and VASPKIT produce spin-resolved reformatted band files in the
+calculation directory, run:
+
+```bash
+alterseek-path bandplot
+```
+
+By default this reads:
+
+```text
+KLABELS
+REFORMATTED_BAND_UP.dat
+REFORMATTED_BAND_DW.dat
+```
+
+and writes:
+
+```text
+alterband.png
+```
+
+Use PNG for quick checks and PowerPoint slides:
+
+```bash
+alterseek-path bandplot -o alterband.png
+```
+
+Use PDF for manuscript figures and Adobe Illustrator editing:
+
+```bash
+alterseek-path bandplot -o alterband.pdf
+```
+
+Matplotlib chooses the file format from the output extension. PDF is usually the
+most convenient vector format for editing scientific plots in Illustrator, while
+PNG is usually the most convenient raster format for presentations. If you want
+both outputs, run the command twice with different `-o` values.
+
+Optional arguments:
+
+```bash
+alterseek-path bandplot --emin -3 --emax 3 -o my_band.png
+alterseek-path bandplot --klabels KLABELS --up REFORMATTED_BAND_UP.dat --down REFORMATTED_BAND_DW.dat
+```
+
+The standalone command `alterseek-bandplot` is also installed, but
+`alterseek-path bandplot` is the recommended workflow for cluster runs.
 
 ---
 
@@ -139,13 +202,6 @@ IBZ centroid and BZ visualization for one structure:
 
 ```bash
 python compute_centroid_hybrid.py POSCAR
-```
-
-Batch centroid processing:
-
-```bash
-python batch_centroid_hybrid.py /path/to/structures/ --output summary.csv
-python batch_centroid_hybrid.py file1.vasp file2.cif file3.vasp
 ```
 
 Monoclinic IRBZ vertex diagnostic:

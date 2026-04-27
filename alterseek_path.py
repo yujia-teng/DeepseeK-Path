@@ -5,6 +5,7 @@
 # 03/2026    - Integrated find_sf_operations and compute_centroid_hybrid into one workflow
 import numpy as np
 import os
+import sys
 from typing import List, Tuple, Dict, Optional
 
 # Try to import spin-flip operations finder
@@ -110,11 +111,19 @@ class KPointsModifier:
             print(f"Error reading file: {e}")
             return False
 
-    def load_flip_operations(self, filename: str = "flip_spin_operations.txt") -> List[np.ndarray]:
+    def load_flip_operations(self, filename: str = "spin_flip_operations.txt") -> List[np.ndarray]:
         """Reads pre-calculated rotation matrices from file"""
         matrices = []
         unique = []
         current_matrix = []
+        if not os.path.exists(filename):
+            legacy = (
+                "preserve_spin_operations.txt"
+                if filename == "spin_preserve_operations.txt"
+                else "flip_spin_operations.txt"
+            )
+            if filename != legacy and os.path.exists(legacy):
+                filename = legacy
         try:
             with open(filename, 'r') as f:
                 lines = f.readlines()
@@ -138,7 +147,7 @@ class KPointsModifier:
         except FileNotFoundError:
             return []
 
-    def load_preserve_operations(self, filename: str = "preserve_spin_operations.txt") -> List[np.ndarray]:
+    def load_preserve_operations(self, filename: str = "spin_preserve_operations.txt") -> List[np.ndarray]:
         """Reads pre-calculated spin-preserve rotation matrices from file."""
         return self.load_flip_operations(filename)
 
@@ -434,10 +443,10 @@ class KPointsModifier:
 
         # None = Step 0 not run; True = file freshly written; False = ran but no flip ops found
         _step0_wrote_flip_file = None
-        _flip_file = 'flip_spin_operations.txt'
+        _flip_file = 'spin_flip_operations.txt'
 
         if not os.path.exists(struct_file):
-            print(f"[Note] '{struct_file}' not found. Skipping Step 0, using existing flip_spin_operations.txt")
+            print(f"[Note] '{struct_file}' not found. Skipping Step 0, using existing spin_flip_operations.txt")
             struct_file = None
         elif not FIND_SF_AVAILABLE:
             print("[Note] find_sf_operations.py not found. Skipping Step 0.")
@@ -465,9 +474,20 @@ class KPointsModifier:
                 print(f"Laue Group: {sf_result['laue_group']}")
                 print(f"Magnetic SG: {sf_result['magnetic_space_group']}")
                 print(f"Spin group: {sf_result['spin_group']}")
-                print(f"Operations: {sf_result['total_operations']} total, "
-                      f"{sf_result['spin_flip_operations']} spin-flip, "
-                      f"{sf_result['spin_preserve_operations']} spin-preserving")
+                unique_ops = sf_result.get('unique_point_operations',
+                                           sf_result['total_operations'])
+                print(f"Space-group operations: {sf_result['total_operations']} total")
+                print(f"Point operations: {unique_ops} unique")
+                print("Actual point operations: "
+                      f"{sf_result['actual_spin_flip_point_operations']} spin-flip, "
+                      f"{sf_result['actual_spin_preserve_point_operations']} spin-preserving")
+                print("Inversion-extended k operations: "
+                      f"{sf_result['extended_spin_flip_point_operations']} spin-flip, "
+                      f"{sf_result['extended_spin_preserve_point_operations']} spin-preserving "
+                      f"({sf_result['extended_spin_flip_operations']} + "
+                      f"{sf_result['extended_spin_preserve_operations']} with translations)")
+                if sf_result['spin_split_diagnostic']:
+                    print(f"Diagnostic: {sf_result['spin_split_diagnostic']}")
                 print(f"Saved: {', '.join(sf_result['saved_files'])}")
 
         # Step 1: High-symmetry k-path (auto from seekpath or user file)
@@ -487,22 +507,27 @@ class KPointsModifier:
                 print("Press [Enter] to use this path, or type a filename to load your own: ", end='', flush=True)
                 path_choice = input().strip()
                 if not path_choice:
-                    # Build kpoints_data in the same convention as Figure 1.
-                    # seekpath/HPKOT labels can differ from the S-C labels used by
-                    # lattice_kpoints.py (e.g. BCT Z_0 vs S-C Z1, RHL T/H_2/S_0
-                    # vs S-C labels), so use the plotted IBZ path when available.
+                    # Build kpoints_data in the same HPKOT/SeeK-path convention
+                    # as Figure 1.  lattice_kpoints.py may include curated
+                    # closure vertices for the hull, but ibz_kpath contains only
+                    # the public band-path labels.  path_kpoints_frac keeps
+                    # optional path-only labels such as H_2 available without
+                    # adding them to the centroid hull.
                     self.kpoints_data = []
                     sc_type_auto = centroid_result.get('sc_type', '')
                     if 'ibz_kpath' in centroid_result and 'ibz_kpoints_frac' in centroid_result:
-                        self.header_lines = [f'K-Path generated by AlterSeeK-Path (S-C {sc_type_auto})',
+                        self.header_lines = [f'K-Path generated by AlterSeeK-Path (HPKOT {sc_type_auto})',
                                              '20', 'Line-Mode', 'Reciprocal']
-                        ibz_coords = centroid_result['ibz_kpoints_frac']
+                        ibz_coords = centroid_result.get(
+                            'path_kpoints_frac',
+                            centroid_result['ibz_kpoints_frac']
+                        )
                         auto_path = centroid_result['ibz_kpath']
                         for seg_start, seg_end in auto_path:
                             for label in (seg_start, seg_end):
                                 coords = ibz_coords[label]
                                 self.kpoints_data.append([coords[0], coords[1], coords[2], label])
-                        print(f"Using S-C {sc_type_auto} path ({len(auto_path)} segments, {len(self.kpoints_data)} k-points)")
+                        print(f"Using HPKOT {sc_type_auto} path ({len(auto_path)} segments, {len(self.kpoints_data)} k-points)")
                     else:
                         self.header_lines = ['K-Path generated by AlterSeeK-Path (seekpath)', '20', 'Line-Mode', 'Reciprocal']
                         for seg_start, seg_end in sp_path:
@@ -607,7 +632,7 @@ class KPointsModifier:
         if _step0_wrote_flip_file is False:
             # Step 0 ran but found no flip ops for this structure.
             # Don't load a stale file from a previous run on a different structure.
-            print("[Note] Step 0 found no spin-flip operations --skipping any existing flip_spin_operations.txt.")
+            print("[Note] Step 0 found no spin-flip operations --skipping any existing spin_flip_operations.txt.")
             flip_ops = []
         else:
             flip_ops = self.load_flip_operations()
@@ -754,6 +779,7 @@ class KPointsModifier:
                             block=False,
                             path_sequence=new_kpoints,
                             defer_show=True,
+                            unique_ops=centroid_result.get('unique_ops'),
                         )
                         if spin_flip_fig is not None:
                             display_figures.append(spin_flip_fig)
@@ -832,7 +858,24 @@ class KPointsModifier:
         except Exception as e:
             print(f"Error processing k-points: {e}")
 
-if __name__ == "__main__":
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] in {"-h", "--help"}:
+        print("usage: alterseek-path [bandplot] [options]\n")
+        print("Run without arguments to generate an altermagnetic KPOINTS path interactively.")
+        print("Subcommands:")
+        print("  bandplot    Plot spin-resolved bands from KLABELS and reformatted band data.")
+        print("\nFor band plotting options, run: alterseek-path bandplot --help")
+        return
+
+    if len(sys.argv) > 1 and sys.argv[1].lower() in {"bandplot", "plot-band", "plot"}:
+        from plot_alterband import main as plot_alterband_main
+        plot_alterband_main(sys.argv[2:])
+        return
+
     modifier = KPointsModifier()
     modifier.interactive_modify()
+
+
+if __name__ == "__main__":
+    main()
 

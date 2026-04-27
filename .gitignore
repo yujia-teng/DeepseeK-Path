@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 *.pyo
+*.bak_*
 
 # Jupyter
 .ipynb_checkpoints/
@@ -13,3 +14,11 @@ CODEX_MEMORY.md
 spin_operations.txt
 flip_spin_operations.txt
 preserve_spin_operations.txt
+spin_flip_operations.txt
+spin_preserve_operations.txt
+KPOINTS_modified
+*_ibz_*.png
+*_spinflip_*.png
+*_spinbz_*.png
+*_spinbz_top_*.png
+_tmp*/

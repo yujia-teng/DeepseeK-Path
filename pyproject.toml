@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alterseek-path"
+version = "0.1.0"
+description = "Generate altermagnetic k-point paths for VASP workflows."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=1.26",
+    "matplotlib>=3.9",
+    "scipy>=1.13",
+    "sympy>=1.12",
+    "spglib>=2.6",
+    "spinspg>=0.1.6",
+    "ase>=3.22",
+    "seekpath>=2.1",
+    "pymatgen>=2024.1",
+]
+
+[project.scripts]
+alterseek-path = "alterseek_path:main"
+alterseek-bandplot = "plot_alterband:main"
+
+[tool.setuptools]
+py-modules = [
+    "alterseek_path",
+    "compute_centroid_hybrid",
+    "find_sf_operations",
+    "lattice_kpoints",
+    "plot_alterband",
+]

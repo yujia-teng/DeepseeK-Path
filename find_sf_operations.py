@@ -37,7 +37,8 @@ def write_operations_to_file(filename, rotations, translations, spin_rotations, 
         f.write(f"SPIN SYMMETRY LOG\n")
         f.write("="*40 + "\n\n")
         f.write(f"{label_info}\n\n")
-        f.write(f"Total Symmetry Operations: {len(rotations)}\n")
+        f.write(f"Full space-group operations: {len(rotations)}\n")
+        f.write(f"Unique point operations: {count_unique_point_operations(rotations)}\n")
         f.write("-" * 40 + "\n")
         for i in range(len(rotations)):
             f.write(f"Operation {i+1}:\n")
@@ -49,6 +50,50 @@ def write_operations_to_file(filename, rotations, translations, spin_rotations, 
         print(f"[INFO] All operations written to '{filename}'")
 
 # --- HELPER 2: Write ONLY Flip Operations for automation ---
+def _operation_class_indices(spin_rotations, flip):
+    indices = []
+    for i, s_rot in enumerate(spin_rotations):
+        is_flip = np.isclose(np.linalg.det(s_rot), -1)
+        if is_flip == flip:
+            indices.append(i)
+    return indices
+
+
+def _collect_point_ops(rotations, indices, include_inversion=False):
+    ops = []
+    source_indices = []
+    for i in indices:
+        variants = [np.array(rotations[i], dtype=int)]
+        if include_inversion:
+            variants.append(-np.array(rotations[i], dtype=int))
+        for rot in variants:
+            if not any(np.array_equal(rot, ex) for ex in ops):
+                ops.append(rot)
+                source_indices.append(i + 1)
+    return ops, source_indices
+
+
+def operation_count_summary(rotations, spin_rotations):
+    flip_indices = _operation_class_indices(spin_rotations, flip=True)
+    preserve_indices = _operation_class_indices(spin_rotations, flip=False)
+    flip_point, _ = _collect_point_ops(rotations, flip_indices)
+    preserve_point, _ = _collect_point_ops(rotations, preserve_indices)
+    flip_ext_point, _ = _collect_point_ops(rotations, flip_indices, include_inversion=True)
+    preserve_ext_point, _ = _collect_point_ops(rotations, preserve_indices, include_inversion=True)
+    return {
+        'full_space_group_operations': len(rotations),
+        'actual_spin_flip_operations': len(flip_indices),
+        'actual_spin_preserve_operations': len(preserve_indices),
+        'unique_point_operations': count_unique_point_operations(rotations),
+        'actual_spin_flip_point_operations': len(flip_point),
+        'actual_spin_preserve_point_operations': len(preserve_point),
+        'extended_spin_flip_point_operations': len(flip_ext_point),
+        'extended_spin_preserve_point_operations': len(preserve_ext_point),
+        'extended_spin_flip_operations': 2 * len(flip_indices),
+        'extended_spin_preserve_operations': 2 * len(preserve_indices),
+    }
+
+
 def write_flip_ops_to_file(filename, rotations, spin_rotations, verbose=True):
     """
     Filters operations where Spin Rotation is a flip (det approx -1).
@@ -56,18 +101,10 @@ def write_flip_ops_to_file(filename, rotations, spin_rotations, verbose=True):
     partner -R, then deduplicate. Translations do not affect reciprocal-space
     k-point mapping.
     """
-    flip_ops = []
-    flip_indices = []
-
-    for i, s_rot in enumerate(spin_rotations):
-        if not np.isclose(np.linalg.det(s_rot), -1):
-            continue
-
-        for rot in (np.array(rotations[i], dtype=int),
-                    -np.array(rotations[i], dtype=int)):
-            if not any(np.array_equal(rot, ex) for ex in flip_ops):
-                flip_ops.append(rot)
-                flip_indices.append(i + 1)
+    flip_indices = _operation_class_indices(spin_rotations, flip=True)
+    flip_ops, source_indices = _collect_point_ops(
+        rotations, flip_indices, include_inversion=True
+    )
 
     if not flip_ops:
         if verbose:
@@ -75,8 +112,8 @@ def write_flip_ops_to_file(filename, rotations, spin_rotations, verbose=True):
         return 0
 
     with open(filename, 'w') as f:
-        f.write(f"# Found {len(flip_ops)} spin-flipping operations\n")
-        f.write(f"# Original Indices: {flip_indices}\n")
+        f.write(f"# Found {len(flip_ops)} inversion-extended spin-flipping point operations\n")
+        f.write(f"# Original Indices: {source_indices}\n")
         for i, rot in enumerate(flip_ops):
             f.write(f"Operation_{i+1}\n")
             # Write matrix row by row
@@ -90,24 +127,18 @@ def write_flip_ops_to_file(filename, rotations, spin_rotations, verbose=True):
 
 
 def write_preserve_ops_to_file(filename, rotations, spin_rotations, verbose=True):
-    """Write deduplicated spatial rotations with det(spin_rotation) != -1."""
-    preserve_ops = []
-    preserve_indices = []
-
-    for i, s_rot in enumerate(spin_rotations):
-        if np.isclose(np.linalg.det(s_rot), -1):
-            continue
-        rot = np.array(rotations[i], dtype=int)
-        if not any(np.array_equal(rot, ex) for ex in preserve_ops):
-            preserve_ops.append(rot)
-            preserve_indices.append(i + 1)
+    """Write inversion-extended spin-preserving point operations."""
+    preserve_indices = _operation_class_indices(spin_rotations, flip=False)
+    preserve_ops, source_indices = _collect_point_ops(
+        rotations, preserve_indices, include_inversion=True
+    )
 
     if not preserve_ops:
         return 0
 
     with open(filename, 'w') as f:
-        f.write(f"# Found {len(preserve_ops)} spin-preserving operations\n")
-        f.write(f"# Original Indices: {preserve_indices}\n")
+        f.write(f"# Found {len(preserve_ops)} inversion-extended spin-preserving point operations\n")
+        f.write(f"# Original Indices: {source_indices}\n")
         for i, rot in enumerate(preserve_ops):
             f.write(f"Operation_{i+1}\n")
             for row in rot:
@@ -117,6 +148,58 @@ def write_preserve_ops_to_file(filename, rotations, spin_rotations, verbose=True
     if verbose:
         print(f"[INFO] {len(preserve_ops)} spin-preserving matrices written to '{filename}'")
     return len(preserve_ops)
+
+
+def count_unique_point_operations(rotations):
+    """Count unique spatial point operations, ignoring translations."""
+    unique_rots = []
+    for rot in rotations:
+        rot_arr = np.array(rot, dtype=int)
+        if not any(np.array_equal(rot_arr, existing) for existing in unique_rots):
+            unique_rots.append(rot_arr)
+    return len(unique_rots)
+
+
+def has_spin_flip_inversion(rotations, spin_rotations):
+    """Return True when inversion is an actual spin-flip operation."""
+    inversion = -np.eye(3, dtype=int)
+    for rot, s_rot in zip(rotations, spin_rotations):
+        if (
+            np.array_equal(np.array(rot, dtype=int), inversion)
+            and np.isclose(np.linalg.det(s_rot), -1)
+        ):
+            return True
+    return False
+
+
+def has_spin_flip_translation(rotations, translations, spin_rotations):
+    """Return True when a pure nonzero translation flips spin."""
+    identity = np.eye(3, dtype=int)
+    for rot, trans, s_rot in zip(rotations, translations, spin_rotations):
+        if not np.array_equal(np.array(rot, dtype=int), identity):
+            continue
+        if not np.isclose(np.linalg.det(s_rot), -1):
+            continue
+        trans_mod = np.mod(np.array(trans, dtype=float), 1.0)
+        trans_mod[np.isclose(trans_mod, 1.0, atol=1e-8)] = 0.0
+        if not np.allclose(trans_mod, 0.0, atol=1e-8):
+            return True
+    return False
+
+
+def altermagnetic_diagnostic(rotations, translations, spin_rotations):
+    """Summarize whether spin-flip operations indicate AM splitting or PT."""
+    flip_indices = _operation_class_indices(spin_rotations, flip=True)
+    flip_point_ops, _ = _collect_point_ops(rotations, flip_indices)
+    inversion = -np.eye(3, dtype=int)
+    pt = any(np.array_equal(op, inversion) for op in flip_point_ops)
+    if pt:
+        return "PT symmetry detected, not altermagnet."
+    if has_spin_flip_translation(rotations, translations, spin_rotations):
+        return "Ut symmetry detected, not altermagnet."
+    if flip_point_ops:
+        return ""
+    return "No spin-flip point operation detected."
 
 # ==========================================
 # MAIN FUNCTION
@@ -287,9 +370,28 @@ def run(structure_file, moments_str, verbose=True):
     )
 
     # Print info
+    counts = operation_count_summary(rotations, spin_rotations)
+    unique_point_operations = counts['unique_point_operations']
+    spin_split_diagnostic = altermagnetic_diagnostic(
+        rotations, translations, spin_rotations
+    )
+
     if verbose:
         print(f"Spin-Only Group Type: {sog}")
-        print(f"Total Symmetry Operations: {len(rotations)}")
+        print(f"Full space-group operations: {counts['full_space_group_operations']}")
+        print(f"Unique point operations: {unique_point_operations}")
+        print(
+            "Actual point operations: "
+            f"{counts['actual_spin_flip_point_operations']} spin-flip, "
+            f"{counts['actual_spin_preserve_point_operations']} spin-preserving"
+        )
+        print(
+            "Inversion-extended point operations for k mapping: "
+            f"{counts['extended_spin_flip_point_operations']} spin-flip, "
+            f"{counts['extended_spin_preserve_point_operations']} spin-preserving"
+        )
+        if spin_split_diagnostic:
+            print(f"Diagnostic: {spin_split_diagnostic}")
 
     # --- PART 5: Output Files ---
     if verbose:
@@ -306,8 +408,10 @@ Magnetic Space Group Label: {msg_label}"""
     write_operations_to_file("spin_operations.txt", rotations, translations, spin_rotations, label_info_str, verbose=verbose)
 
     # 2. Write the automation file
-    flip_count = write_flip_ops_to_file("flip_spin_operations.txt", rotations, spin_rotations, verbose=verbose)
-    preserve_count = write_preserve_ops_to_file("preserve_spin_operations.txt", rotations, spin_rotations, verbose=verbose)
+    flip_filename = "spin_flip_operations.txt"
+    preserve_filename = "spin_preserve_operations.txt"
+    flip_count = write_flip_ops_to_file(flip_filename, rotations, spin_rotations, verbose=verbose)
+    preserve_count = write_preserve_ops_to_file(preserve_filename, rotations, spin_rotations, verbose=verbose)
     return {
         'structure_file': structure_file,
         'num_atoms': num_atoms,
@@ -318,12 +422,22 @@ Magnetic Space Group Label: {msg_label}"""
         'magnetic_space_group': msg_label,
         'spin_group': str(sog),
         'total_operations': len(rotations),
+        'unique_point_operations': unique_point_operations,
+        'actual_spin_flip_point_operations': counts['actual_spin_flip_point_operations'],
+        'actual_spin_preserve_point_operations': counts['actual_spin_preserve_point_operations'],
+        'extended_spin_flip_point_operations': counts['extended_spin_flip_point_operations'],
+        'extended_spin_preserve_point_operations': counts['extended_spin_preserve_point_operations'],
+        'extended_spin_flip_operations': counts['extended_spin_flip_operations'],
+        'extended_spin_preserve_operations': counts['extended_spin_preserve_operations'],
+        'pt_spin_flip': has_spin_flip_inversion(rotations, spin_rotations),
+        'ut_spin_flip': has_spin_flip_translation(rotations, translations, spin_rotations),
+        'spin_split_diagnostic': spin_split_diagnostic,
         'spin_flip_operations': flip_count,
         'spin_preserve_operations': preserve_count,
         'saved_files': [
             'spin_operations.txt',
-            'flip_spin_operations.txt',
-            'preserve_spin_operations.txt',
+            flip_filename,
+            preserve_filename,
         ],
     }
 
