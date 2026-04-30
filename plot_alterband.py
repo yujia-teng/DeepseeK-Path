@@ -45,17 +45,17 @@ FERMI_COLOR = "0"
 FONT_SIZE = 14
 
 GREEK_LABELS = {
-    "G": r"\Gamma",
-    "GAMMA": r"\Gamma",
-    "DELTA": r"\Delta",
-    "LAMBDA": r"\Lambda",
-    "SIGMA": r"\Sigma",
-    "\u0393": r"\Gamma",
-    "\u0394": r"\Delta",
-    "\u039b": r"\Lambda",
-    "\u03a3": r"\Sigma",
+    "G": r"$\Gamma$",
+    "GAMMA": r"$\Gamma$",
+    "DELTA": r"$\Delta$",
+    "LAMBDA": r"$\Lambda$",
+    "SIGMA": r"$\Sigma$",
+    "\u0393": r"$\Gamma$",
+    "\u0394": r"$\Delta$",
+    "\u039b": r"$\Lambda$",
+    "\u03a3": r"$\Sigma$",
+    "\u8795": r"$\Gamma$",
 }
-
 
 def _read_klabels(path: Path) -> tuple[list[str], list[float]]:
     labels: list[str] = []
@@ -119,7 +119,7 @@ def _read_plot_config(path: Path) -> dict[str, Any]:
 
 
 def _format_tick_label(label: str) -> str:
-    """Return Matplotlib mathtext for Greek names, subscripts, and primes."""
+    """Return labels with mathtext only where real Greek/subscripts are needed."""
     if "|" in label:
         return "|".join(_format_tick_label(part) for part in label.split("|"))
 
@@ -133,14 +133,20 @@ def _format_tick_label(label: str) -> str:
     else:
         base, subscript = label, None
 
-    base = GREEK_LABELS.get(base.upper(), GREEK_LABELS.get(base, base))
-    if base.startswith("\\") or subscript is not None or prime_count:
-        body = base
-        if subscript is not None:
-            body += f"_{{{subscript}}}"
-        body += "'" * prime_count
-        return rf"${body}$"
+    greek = GREEK_LABELS.get(base.upper(), GREEK_LABELS.get(base))
+    if subscript is not None:
+        sub_body = subscript if subscript.isdigit() else rf"\mathrm{{{subscript}}}"
+        if greek is not None:
+            body = greek[1:-1]
+        else:
+            body = rf"\mathrm{{{base}}}"
+        return rf"${body}_{{{sub_body}}}$" + "'" * prime_count
 
+    if greek is not None:
+        return greek + "'" * prime_count
+
+    if prime_count:
+        return base + "'" * prime_count
     return label
 
 
