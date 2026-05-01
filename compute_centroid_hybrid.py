@@ -1502,7 +1502,7 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
         tetragonal_extra = {
             'tP1': ["X_A", "R_A"],
             'tI1': ["M_p", "N_p", "Z_0_p"],
-            'tI2': ["N_p", "S_0_p", "S_p"],
+            'tI2': ["R_p", "S_0_p", "S_p", "N_p"],
         }
         extra_general_vertices = [
             label for label in tetragonal_extra[sc_type]
