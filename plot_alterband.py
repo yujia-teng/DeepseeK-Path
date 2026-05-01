@@ -29,6 +29,7 @@ mpl.rcParams["ytick.direction"] = "in"
 
 import numpy as np
 from matplotlib import pyplot as plt
+from matplotlib.ticker import MaxNLocator
 
 
 DEFAULT_ELIM = (-2.0, 2.0)
@@ -159,6 +160,8 @@ def plot_alterband(
     elim: tuple[float, float] = DEFAULT_ELIM,
     fig_size: tuple[float, float] = DEFAULT_FIG_SIZE,
     gap_frac: float = DEFAULT_GAP_FRAC,
+    rotate_xtick_labels: bool = False,
+    xtick_rotation: float = 45.0,
 ) -> Path:
     """Create the spin-resolved band plot and return the output path."""
     klabels_path = Path(klabels)
@@ -213,10 +216,19 @@ def plot_alterband(
 
     ax.axhline(y=0, color=FERMI_COLOR, lw=FERMI_LW, ls="--", zorder=1)
     ax.set_xticks(positions)
-    ax.set_xticklabels(tick_lab, fontsize=FONT_SIZE)
+    xtick_label_kwargs: dict[str, Any] = {"fontsize": FONT_SIZE}
+    if rotate_xtick_labels:
+        xtick_label_kwargs.update(
+            {
+                "rotation": xtick_rotation,
+                "ha": "right",
+                "rotation_mode": "anchor",
+            }
+        )
+    ax.set_xticklabels(tick_lab, **xtick_label_kwargs)
     ax.set_xlim(positions[0], positions[-1])
     ax.set_ylim(elim)
-    ax.set_yticks(range(int(elim[0]), int(elim[1]) + 1))
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=5, steps=[1, 2, 5, 10]))
     ax.set_ylabel(r"E - E$_\mathrm{F}$ (eV)", fontsize=FONT_SIZE + 1)
     ax.tick_params(axis="x", length=0)
     ax.tick_params(axis="y", labelsize=FONT_SIZE)
@@ -262,6 +274,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Half-width of k|k' gap as a fraction of the total k-path.",
     )
+    parser.add_argument(
+        "--rotate-xtick-labels",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Rotate all x-axis tick labels. Can also be set in TOML.",
+    )
+    parser.add_argument(
+        "--xtick-rotation",
+        type=float,
+        default=None,
+        help="X-axis tick label rotation angle in degrees when rotation is enabled.",
+    )
     return parser
 
 
@@ -280,6 +304,8 @@ def main(argv: list[str] | None = None) -> None:
     emax = float(option("emax", DEFAULT_ELIM[1]))
     fig_width = float(option("fig_width", DEFAULT_FIG_SIZE[0]))
     fig_height = float(option("fig_height", DEFAULT_FIG_SIZE[1]))
+    rotate_xtick_labels = bool(option("rotate_xtick_labels", False))
+    xtick_rotation = float(option("xtick_rotation", 45.0))
     output = plot_alterband(
         klabels=option("klabels", "KLABELS"),
         band_up=option("up", config.get("band_up", "REFORMATTED_BAND_UP.dat")),
@@ -288,6 +314,8 @@ def main(argv: list[str] | None = None) -> None:
         elim=(emin, emax),
         fig_size=(fig_width, fig_height),
         gap_frac=float(option("gap_frac", DEFAULT_GAP_FRAC)),
+        rotate_xtick_labels=rotate_xtick_labels,
+        xtick_rotation=xtick_rotation,
     )
     print(f"Band plot written to: {output}")
 

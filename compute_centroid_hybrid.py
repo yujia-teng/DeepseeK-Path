@@ -1486,12 +1486,35 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
     bz_center = np.mean(all_bz_pts, axis=0)
     bz_span = np.max(all_bz_pts) - np.min(all_bz_pts)
 
-    # For plotting: use base type k-points, kpath and display labels
-    # (hull was computed from centroid type, so faces must use same point set)
-    # Plot with the same seekpath convention used for the hull.  Add path-only
-    # optional points (e.g. H_2) only when the selected SG path actually uses
-    # them; do not let them affect the hull or centroid.
-    kpath_plot = hull_kpath
+    # Selected band path. For doubled-IBZ cases, keep the usual HPKOT path and
+    # expose project-only copied vertices as isolated general-point anchors.
+    # alterseek_path appends each anchor as B_A-k | k'-B_A' instead of adding
+    # duplicated high-symmetry edges.
+    band_kpath = list(kpath)
+    band_kpoints_frac = dict(path_kpoints_frac)
+    extra_general_vertices = []
+    if sc_type in {'hP1', 'hP2'} and 149 <= sg <= 176:
+        extra_general_vertices = ["M_A", "L_A"]
+        for label in ("L_A", "M_A"):
+            if label in kpoints_frac_centroid:
+                band_kpoints_frac[label] = kpoints_frac_centroid[label]
+    elif 75 <= sg <= 88 and sc_type in {'tP1', 'tI1', 'tI2'}:
+        tetragonal_extra = {
+            'tP1': ["X_A", "R_A"],
+            'tI1': ["M_p", "N_p", "Z_0_p"],
+            'tI2': ["N_p", "S_0_p", "S_p"],
+        }
+        extra_general_vertices = [
+            label for label in tetragonal_extra[sc_type]
+            if label in kpoints_frac_centroid
+        ]
+        for label in extra_general_vertices:
+            band_kpoints_frac[label] = kpoints_frac_centroid[label]
+
+    # For plotting: draw the selected band path on top of the project IBZ hull.
+    # Add path-only optional points (e.g. H_2) only when the selected path
+    # actually uses them; do not let them affect the hull or centroid.
+    kpath_plot = band_kpath
     display_labels_plot = display_labels
     kpoints_cart_plot = dict(kpoints_cart_centroid)
     for label in {lbl for segment in kpath_plot for lbl in segment}:
@@ -1577,6 +1600,9 @@ def run(filename, output_dir=None, show_plot=True, defer_show=False, verbose=Tru
         'ibz_kpoints_frac': kpoints_frac_centroid if sg not in (1, 2) else kpoints_frac,
         'path_kpoints_frac': kpoints_frac_for_output,
         'ibz_kpath': kpath_plot,
+        'band_kpoints_frac': band_kpoints_frac,
+        'band_kpath': band_kpath,
+        'extra_general_vertices': extra_general_vertices,
         'hull_pts': points_arr if sg not in (1, 2) else None,
         'hull_simplices': hull.simplices.tolist() if (sg not in (1, 2) and hull is not None) else None,
         'sym_ops_cart': sym_ops_cart,

@@ -186,6 +186,8 @@ emax = 2
 fig_width = 16
 fig_height = 5
 gap_frac = 0.004
+rotate_xtick_labels = false
+xtick_rotation = 45
 output = "alterband.png"
 ```
 
