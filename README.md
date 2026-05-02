@@ -17,21 +17,13 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-After editable installation, the installed commands are available from any
-calculation directory in the same Python environment. You do not need to copy the
-Python scripts into each material folder.
-
 ---
 
 ## Quick Start
 
-Run the command-line tool from any working folder containing your structure file:
-
 ```bash
 alterseek-path
 ```
-
-For development, `python alterseek_path.py` still works from the repository root.
 
 The script guides you through five interactive steps:
 
@@ -50,21 +42,17 @@ The default output file is:
 KPOINTS_modified
 ```
 
-For cluster screening, install AlterSeeK-Path once in the environment used by
-your jobs, then run `alterseek-path` inside each material calculation directory.
-The command reads and writes files in the current directory.
-
 ---
 
 ## Inputs
 
 ### Structure file
 
-- `POSCAR` / `.vasp`: magnetic moments are entered manually.
-- `.cif`: magnetic moments are entered manually.
+- `POSCAR` / `.vasp`/  `.cif`: magnetic moments are entered manually.
 - `.mcif`: magnetic moments are read from the file when available.
 
-For manual moments, enter values in atom order. Trailing non-magnetic atoms are filled with zero automatically, so `1 -1` is enough when the two magnetic atoms appear first.
+Type moments in atom order. Untyped atoms default to `0`, so `1 -1` is enough
+when the two magnetic atoms appear first.
 
 ### K-path source
 
@@ -73,23 +61,26 @@ For manual moments, enter values in atom order. Trailing non-magnetic atoms are 
 
 ---
 
-## Example Terminal Session
+## Example 
 
-```text
-$ python alterseek_path.py
+```
+$ alterseek-path
 === Altermagnetic K-Path Generator ===
 
 >>> Step 0: Spin symmetry
-Enter structure file (default: POSCAR, supports .vasp/.cif/.mcif): POSCAR
+Enter structure file (default: POSCAR, supports .vasp/.cif/.mcif):
 Magnetic moments (atom order, trailing atoms auto-fill to 0): 1 -1
 
 Structure: POSCAR, atoms: 6
 Space Group: P6_3mc (186)
 Point Group: 6mm
 Laue Group: 6/mmm
-Magnetic SG: BNS ..., type ...
+Magnetic SG: BNS 186.205, OG 186.3.1436 (UNI 1435, Litvin 1436, parent SG 186, type 3)
 Spin group: COLLINEAR(axis=[0. 0. 1.])
-Operations: 12 total, 6 spin-flip, 6 spin-preserving
+Space-group operations: 12 total
+Point operations: 12 unique
+Actual point operations: 6 spin-flip, 6 spin-preserving
+Inversion-extended k operations: 12 spin-flip, 12 spin-preserving (12 + 12 with translations)
 Saved: spin_operations.txt, spin_flip_operations.txt, spin_preserve_operations.txt
 
 >>> Step 1: High-symmetry k-path
@@ -102,21 +93,27 @@ Using HPKOT hP2 path (9 segments, 18 k-points)
 IBZ centroid: [0.277778, 0.111111, 0.250000]
 
 >>> Step 3: Spin-flip operation
-Found 6 spin-flip operations.
+Found 12 spin-flip operations.
 Default R: Option 1
 Press [Enter] to use default, type a number, 'list' to show matrices, or 'manual':
 Selected: Option 1
 
 >>> Step 4: Build altermagnetic path
+[Basis] Converted R from input-cell basis to primitive basis.
+Primitive-basis R used for KPOINTS:
+    [  1.00 -1.00   0 ]
+    [  1.00  0.00   0 ]
+    [   0   0   1 ]
 k' = [-0.1111, 0.3889, 0.2500]
-Generated path: GAMMA-M-k | k'-M'-K'-k' | k-K-GAMMA-k | ... | L-M | H-K
-Full path: 9 original segments -> 13 generated segments, 36 k-points
+Generated path: GAMMA-M-k | k'-M'-K'-k' | k-K-GAMMA-k | ... | k-H-A | L-M | H-K
+Full path: 9 original segments -> 21 generated segments, 36 k-points
 
 >>> Step 5: Save
-Enter output filename (default: KPOINTS_modified):
-Modified KPOINTS file written to: KPOINTS_modified
-
-Done.
+Displaying generated figures...
+Saved: .\POSCAR_ibz_hP2.png
+Saved: POSCAR_spinflip_hP2.png
+Saved: POSCAR_spinbz_hP2.png
+Saved: POSCAR_spinbz_top_hP2.png
 ```
 
 ---
@@ -134,9 +131,8 @@ Done.
 | `*_spinbz_*.png` | Spin-colored BZ figure |
 | `*_spinbz_top_*.png` | Top-view spin-colored BZ figure |
 
-BZ figures are written as PNG by default, which is usually enough for quick
-checks and slides. To also write PDF copies for manuscript figures or
-Illustrator editing, set:
+BZ figures are PNG by default. To also save PDF copies from `alterseek-path`,
+set:
 
 ```powershell
 $env:ALTERSEEK_BZ_FORMATS = "png,pdf"
@@ -149,19 +145,13 @@ For Laue groups `-1`, `-3`, and `m-3`, no altermagnetic splitting is supported. 
 
 ## Band Plotting
 
-After VASP and VASPKIT produce spin-resolved reformatted band files in the
-calculation directory, go to that calculation directory and run either command:
+After VASP and VASPKIT generate the spin-resolved band files, run:
 
 ```bash
 alterseek-path bandplot
-# or
-alterseek-bandplot
 ```
 
-`alterseek-bandplot` is only a shorter standalone shortcut. It calls the same
-band-plotting code as `alterseek-path bandplot`.
-
-By default this reads:
+By default, this reads:
 
 ```text
 KLABELS
@@ -169,7 +159,7 @@ REFORMATTED_BAND_UP.dat
 REFORMATTED_BAND_DW.dat
 ```
 
-and writes:
+and writes one output file:
 
 ```text
 alterband.png
@@ -185,7 +175,9 @@ emin = -2
 emax = 2
 fig_width = 16
 fig_height = 5
-gap_frac = 0.004
+gap_width_inches = 0.04
+# Legacy fallback: half-width as a fraction of the full k-path.
+# gap_frac = 0.004
 rotate_xtick_labels = false
 xtick_rotation = 45
 output = "alterband.png"
@@ -194,36 +186,22 @@ output = "alterband.png"
 Then run:
 
 ```bash
-alterseek-bandplot
+alterseek-path bandplot
 ```
 
-Command-line options override the TOML file. For example, this uses the TOML
-energy window and figure size, but writes a PDF:
+For PDF from the TOML file, set `output = "alterband.pdf"`.
 
-```bash
-alterseek-bandplot -o alterband.pdf
-```
-
-### PNG and PDF outputs
-
-Matplotlib chooses the file format from the output extension. Use PNG for quick
-checks and PowerPoint slides:
-
-```bash
-alterseek-path bandplot -o alterband.png
-```
-
-Use PDF for manuscript figures and Adobe Illustrator editing:
+Command-line options override the TOML file:
 
 ```bash
 alterseek-path bandplot -o alterband.pdf
 ```
 
-If you want both outputs, run the command twice:
+### PNG and PDF outputs
 
 ```bash
-alterseek-bandplot -o alterband.png
-alterseek-bandplot -o alterband.pdf
+alterseek-path bandplot -o alterband.png
+alterseek-path bandplot -o alterband.pdf
 ```
 
 Optional arguments:
@@ -231,7 +209,14 @@ Optional arguments:
 ```bash
 alterseek-path bandplot --emin -3 --emax 3 -o my_band.png
 alterseek-path bandplot --klabels KLABELS --up REFORMATTED_BAND_UP.dat --down REFORMATTED_BAND_DW.dat
+alterseek-path bandplot --gap-width-inches 0.04
 ```
+
+`gap_width_inches` sets the full visual width of every `k|k'` gap, which keeps
+the printed separator size consistent across figures with different path
+lengths.
+
+`alterseek-bandplot` is an optional shortcut for the same band plotter.
 
 ---
 
@@ -247,12 +232,6 @@ IBZ centroid and BZ visualization for one structure:
 
 ```bash
 python compute_centroid_hybrid.py POSCAR
-```
-
-Monoclinic IRBZ vertex diagnostic:
-
-```bash
-python find_irbz_vertices.py
 ```
 
 ---

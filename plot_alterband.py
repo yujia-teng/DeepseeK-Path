@@ -34,6 +34,7 @@ from matplotlib.ticker import MaxNLocator
 
 DEFAULT_ELIM = (-2.0, 2.0)
 DEFAULT_GAP_FRAC = 0.004
+DEFAULT_GAP_WIDTH_INCHES = 0.05
 DEFAULT_FIG_SIZE = (10.0, 5.0)
 GREY_COLOR = "0.65"
 BAND_LW = 0.7
@@ -159,6 +160,7 @@ def plot_alterband(
     elim: tuple[float, float] = DEFAULT_ELIM,
     fig_size: tuple[float, float] = DEFAULT_FIG_SIZE,
     gap_frac: float = DEFAULT_GAP_FRAC,
+    gap_width_inches: float | None = DEFAULT_GAP_WIDTH_INCHES,
     rotate_xtick_labels: bool = False,
     xtick_rotation: float = 45.0,
 ) -> Path:
@@ -170,7 +172,12 @@ def plot_alterband(
 
     labels, positions = _read_klabels(klabels_path)
     x_total = positions[-1] - positions[0]
-    gap_half = x_total * gap_frac
+    if x_total <= 0:
+        raise ValueError("KLABELS positions must increase from first to last entry")
+    if gap_frac < 0:
+        raise ValueError("gap_frac must be non-negative")
+    if gap_width_inches is not None and gap_width_inches < 0:
+        raise ValueError("gap_width_inches must be non-negative")
 
     tick_lab = [_format_tick_label(label) for label in labels]
     alt_gap = {"k|k'", "k'|k"}
@@ -191,6 +198,32 @@ def plot_alterband(
     bands_dw = bands_dw[:, in_window]
 
     fig, ax = plt.subplots(figsize=fig_size)
+
+    ax.set_xticks(positions)
+    xtick_label_kwargs: dict[str, Any] = {"fontsize": FONT_SIZE}
+    if rotate_xtick_labels:
+        xtick_label_kwargs.update(
+            {
+                "rotation": xtick_rotation,
+                "ha": "right",
+                "rotation_mode": "anchor",
+            }
+        )
+    ax.set_xticklabels(tick_lab, **xtick_label_kwargs)
+    ax.set_xlim(positions[0], positions[-1])
+    ax.set_ylim(elim)
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=5, steps=[1, 2, 5, 10]))
+    ax.set_ylabel(r"E - E$_\mathrm{F}$ (eV)", fontsize=FONT_SIZE + 1)
+    ax.tick_params(axis="x", length=0)
+    ax.tick_params(axis="y", labelsize=FONT_SIZE)
+
+    plt.tight_layout()
+    fig.canvas.draw()
+    if gap_width_inches is None:
+        gap_half = x_total * gap_frac
+    else:
+        axis_width_inches = ax.get_window_extent().width / fig.dpi
+        gap_half = 0.5 * gap_width_inches * x_total / axis_width_inches
 
     for i in range(len(positions) - 1):
         if "k" not in labels[i] and "k" not in labels[i + 1]:
@@ -214,24 +247,6 @@ def plot_alterband(
         ax.axvline(x=pos + gap_half, color=VLINE_COLOR, lw=VLINE_LW, zorder=5)
 
     ax.axhline(y=0, color=FERMI_COLOR, lw=FERMI_LW, ls="--", zorder=1)
-    ax.set_xticks(positions)
-    xtick_label_kwargs: dict[str, Any] = {"fontsize": FONT_SIZE}
-    if rotate_xtick_labels:
-        xtick_label_kwargs.update(
-            {
-                "rotation": xtick_rotation,
-                "ha": "right",
-                "rotation_mode": "anchor",
-            }
-        )
-    ax.set_xticklabels(tick_lab, **xtick_label_kwargs)
-    ax.set_xlim(positions[0], positions[-1])
-    ax.set_ylim(elim)
-    ax.yaxis.set_major_locator(MaxNLocator(nbins=5, steps=[1, 2, 5, 10]))
-    ax.set_ylabel(r"E - E$_\mathrm{F}$ (eV)", fontsize=FONT_SIZE + 1)
-    ax.tick_params(axis="x", length=0)
-    ax.tick_params(axis="y", labelsize=FONT_SIZE)
-
     plt.tight_layout()
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -271,7 +286,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--gap-frac",
         type=float,
         default=None,
-        help="Half-width of k|k' gap as a fraction of the total k-path.",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--gap-width-inches",
+        type=float,
+        default=None,
+        help=(
+            "Full visual width of each k|k' gap in inches."
+        ),
     )
     parser.add_argument(
         "--rotate-xtick-labels",
@@ -305,6 +328,10 @@ def main(argv: list[str] | None = None) -> None:
     fig_height = float(option("fig_height", DEFAULT_FIG_SIZE[1]))
     rotate_xtick_labels = bool(option("rotate_xtick_labels", False))
     xtick_rotation = float(option("xtick_rotation", 45.0))
+    gap_width_config = option("gap_width_inches", DEFAULT_GAP_WIDTH_INCHES)
+    gap_width_inches = (
+        None if gap_width_config is None else float(gap_width_config)
+    )
     output = plot_alterband(
         klabels=option("klabels", "KLABELS"),
         band_up=option("up", config.get("band_up", "REFORMATTED_BAND_UP.dat")),
@@ -313,6 +340,7 @@ def main(argv: list[str] | None = None) -> None:
         elim=(emin, emax),
         fig_size=(fig_width, fig_height),
         gap_frac=float(option("gap_frac", DEFAULT_GAP_FRAC)),
+        gap_width_inches=gap_width_inches,
         rotate_xtick_labels=rotate_xtick_labels,
         xtick_rotation=xtick_rotation,
     )
